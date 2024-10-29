@@ -39,11 +39,13 @@ Clone the repository and create an anaconda environment using
 git clone git@github.com:autonomousvision/gaussian-opacity-fields.git
 cd gaussian-opacity-fields
 
-conda create -y -n gof python=3.8
-conda activate gof
+conda create -y -n 3DSSL-gof python=3.8
+conda activate 3DSSL-gof
 
-pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 -f https://download.pytorch.org/whl/torch_stable.html
-conda install cudatoolkit-dev=11.3 -c conda-forge
+# pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 -f https://download.pytorch.org/whl/torch_stable.html
+pip install torch torchvision --extra-index-url https://download.pytorch.org/whl/cu118
+# conda install cudatoolkit-dev=11.3 -c conda-forge
+conda install cudatoolkit=11.8 -c conda-forge
 
 pip install -r requirements.txt
 
@@ -55,7 +57,13 @@ cd submodules/tetra-triangulation
 conda install cmake
 conda install conda-forge::gmp
 conda install conda-forge::cgal
+
+conda install nvidia/label/cuda-11.8.0::cuda-nvcc
+conda install nvidia/label/cuda-11.8.0::cuda-cudart-dev
+conda env config vars set CUDA_HOME=$CONDA_PREFIX
+
 cmake .
+# if you get error on 'cmake .' then reinstall cmake
 # you can specify your own cuda path
 # export CPATH=/usr/local/cuda-11.3/targets/x86_64-linux/include:$CPATH
 make 
