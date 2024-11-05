@@ -17,6 +17,9 @@ import torch
 import torchvision
 import random
 from random import randint
+
+from trimesh.path.packing import visualize
+
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render, network_gui
 import sys
@@ -36,6 +39,12 @@ except ImportError:
 import time
 from utils.vis_utils import apply_depth_colormap, save_points, colormap
 from utils.depth_utils import depths_to_points, depth_to_normal
+
+import pyvista as pv
+from dreifus.pyvista import add_coordinate_axes, add_camera_frustum
+from dreifus.matrix import Pose, Intrinsics
+from dreifus.camera import CameraCoordinateConvention, PoseType
+from utils.graphics_utils import fov2focal
 
 @torch.no_grad()
 def create_offset_gt(image, offset):
@@ -87,11 +96,43 @@ def L1_loss_appearance(image, gt_image, gaussians, view_idx, return_transformed_
         transformed_image = torch.nn.functional.interpolate(transformed_image, size=(origH, origW), mode="bilinear", align_corners=True)[0]
         return transformed_image
     
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, visualize):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
+
+    if visualize:
+        viewpoint_stack = scene.getTrainCameras().copy()
+
+        images = dict()
+        serials = []
+        world_2_cam_poses = dict()  # serial => world_2_cam_pose
+
+        tmp_cam = viewpoint_stack[0]
+        fy = fov2focal(tmp_cam.FoVy, tmp_cam.image_height)
+        fx = fov2focal(tmp_cam.FoVx, tmp_cam.image_width)
+        intrinsics = Intrinsics(fx, fy, 0, 0)
+
+        for viewpoint_cam in viewpoint_stack:
+            serial = viewpoint_cam.image_name
+            serials.append(serial)
+
+            gt_image = viewpoint_cam.original_image
+            images[serial] = gt_image.cpu().detach().numpy().transpose(1, 2, 0)
+
+            world_2_cam_pose = Pose(matrix_or_rotation=viewpoint_cam.R.T, translation=viewpoint_cam.T,
+                                    camera_coordinate_convention=CameraCoordinateConvention.OPEN_CV,
+                                    pose_type=PoseType.WORLD_2_CAM)
+            world_2_cam_poses[serial] = world_2_cam_pose
+
+        # Visualize camera poses and images
+        p = pv.Plotter()
+        # add_coordinate_axes(p, scale=0.1)
+        for serial in serials:
+            add_camera_frustum(p, world_2_cam_poses[serial], intrinsics, image=images[serial])
+        p.show()
+
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -372,7 +413,7 @@ if __name__ == "__main__":
     # # Start GUI server, configure and run training
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, visualize=True)
 
     # All done
     print("\nTraining complete.")
